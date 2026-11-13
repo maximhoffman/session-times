@@ -11,6 +11,8 @@ const REFRESH_MS = 30_000
 const AUTO_STOP_MS = 15 * 60_000
 // asks for the widest dock; the engine caps it at 45% of the terminal
 const PANE_COLUMNS = 1000
+// either word opens the side pane
+const PANE_ARGS = new Set(['pane', 'panel'])
 
 // Change the tag when Snapshot's fields change: it declines what an earlier
 // version stored, which outlives a reload.
@@ -221,13 +223,13 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: COMMAND,
-      description: 'Таблица сессий по проектам на всю ширину: запуск, активная работа, последнее общение (pane — боковой панелью)',
+      description: 'Таблица сессий по проектам на всю ширину: запуск, активная работа, последнее общение (pane или panel — боковой панелью)',
     })
     return next(e)
   })
 
   on('command.run', { command: COMMAND }, async ($, e) => {
-    if (e.args.trim() === 'pane') {
+    if (PANE_ARGS.has(e.args.trim().toLowerCase())) {
       // focus: the pane takes the keyboard at once; again on an open pane focuses it
       // closeOnEscape: Esc closes the pane instead of only handing the keys back
       await $.ui.open({ id: PANE, title: TITLE, focus: true, closeOnEscape: true, columns: PANE_COLUMNS })
@@ -249,7 +251,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'Placed' }, async ($, e, next) => {
     if (e.props.plugin !== 'session-times' || !e.props.id.startsWith('table-')) return next(e)
     const width = e.viewport?.columns ?? 120
-    return drawTable($, e, width, '/session-times — новая таблица, /session-times pane — боковой панелью.', WIDE_STARTED_EXTRA)
+    return drawTable($, e, width, '/session-times — новая таблица, /session-times pane или /session-times panel — боковой панелью.', WIDE_STARTED_EXTRA)
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {

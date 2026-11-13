@@ -188,3 +188,31 @@ test('the close button closes the pane from the keyboard', async ($, on) => {
   expect(closed).toEqual(['session-times'])
   await ui.unmount()
 })
+
+test('"panel" opens the side pane just like "pane"', async ($, on) => {
+  const opened: string[] = []
+  on('command.register', () => ({ value: { command: 'session-times' } }))
+  on('ui.open', (_, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } }
+  })
+  on('ui.place', () => {
+    throw new Error('panel must not place a transcript table')
+  })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: NOW }))
+  on('clock.every', () => ({ value: {} }))
+  on('process.run', () => ({
+    value: { exitCode: 0, stdout: JSON.stringify(COLLECTED), stderr: '' },
+  }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const answer = await $.command.run({ command: 'session-times', args: ' Panel ' })
+  expect(opened).toEqual(['session-times'])
+  expect(JSON.stringify(answer)).toContain('Панель «Сессии» открыта сбоку')
+
+  // wait for the collected data to reach the pane before the test ends
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /fresh waiting session/ })).toBeDefined()
+  await ui.unmount()
+})
