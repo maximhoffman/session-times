@@ -1,0 +1,1 @@
+{ "name": "session-times", "version": "0.1.0", "description": "Pane with start time, active work time and last human message for every background session", "types": "./types/index.d.ts" }
