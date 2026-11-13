@@ -135,7 +135,7 @@ def collect() -> list[dict[str, Any]]:
                 "state": str(meta.get("state") or "unknown"),
                 "project": project_of(meta),
                 "createdAtMs": created,
-                "createdLabel": datetime.fromtimestamp(created / 1000).strftime("%d.%m %H:%M"),
+                "createdLocal": datetime.fromtimestamp(created / 1000).strftime("%Y-%m-%d %H:%M"),
                 "workMs": int(totals["activeMs"]),
                 "lastHumanAtMs": totals["lastHumanAtMs"],
             }

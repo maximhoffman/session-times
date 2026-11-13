@@ -5,7 +5,8 @@ export type SessionInfo = {
   /** Absolute folder the session was started in, worktrees folded into their repo. */
   project: string
   createdAtMs: number
-  createdLabel: string
+  /** Local creation time as "YYYY-MM-DD HH:MM"; the module formats it per language. */
+  createdLocal: string
   workMs: number
   lastHumanAtMs: number | null
 }

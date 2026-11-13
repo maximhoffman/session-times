@@ -3,8 +3,10 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { SessionInfo, Snapshot } from '../types'
 
+import { STRINGS, langOf } from './strings'
+import type { Strings } from './strings'
+
 const PANE = 'session-times'
-const TITLE = 'Сессии'
 const COMMAND = 'session-times'
 // a command of its own, so the side pane shows up in the typeahead list
 const PANE_COMMAND = 'session-times-pane'
@@ -19,47 +21,55 @@ const PANE_ARGS = new Set(['pane', 'panel'])
 // Change the tag when Snapshot's fields change: it declines what an earlier
 // version stored, which outlives a reload.
 const snapshot = atom({ plugin: 'session-times', key: 'snapshot' } as const, null, {
-  shape: 'snapshot-3',
+  shape: 'snapshot-4',
 })
 
-const STATE_LABELS: Record<string, string> = {
-  working: 'работает',
-  blocked: 'ждёт вас',
-  done: 'готово',
-  stopped: 'стоп',
-}
+// The texts of the language the person chose; set when the module registers.
+let t: Strings = STRINGS.en
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
-/** "40 с", "12 мин", "5 ч", "3 дн": one unit, coarse enough to read at a glance. */
-export const formatAgo = (ms: number): string => {
-  if (ms < MINUTE) return `${Math.max(0, Math.round(ms / 1000))} с`
-  if (ms < HOUR) return `${Math.floor(ms / MINUTE)} мин`
-  if (ms < 2 * DAY) return `${Math.floor(ms / HOUR)} ч`
-  return `${Math.floor(ms / DAY)} дн`
+type Units = Strings['units']
+
+/** "40 s", "12 min", "5 h", "3 d": one unit, coarse enough to read at a glance. */
+export const formatAgo = (ms: number, u: Units): string => {
+  if (ms < MINUTE) return `${Math.max(0, Math.round(ms / 1000))} ${u.second}`
+  if (ms < HOUR) return `${Math.floor(ms / MINUTE)} ${u.minute}`
+  if (ms < 2 * DAY) return `${Math.floor(ms / HOUR)} ${u.hour}`
+  return `${Math.floor(ms / DAY)} ${u.day}`
 }
 
-/** "45 с", "12 мин", "2 ч 05 мин": durations keep minutes once past an hour. */
-export const formatDuration = (ms: number): string => {
-  if (ms < MINUTE) return `${Math.round(ms / 1000)} с`
-  if (ms < HOUR) return `${Math.floor(ms / MINUTE)} мин`
+/** "45 s", "12 min", "2 h 05 min": durations keep minutes once past an hour. */
+export const formatDuration = (ms: number, u: Units): string => {
+  if (ms < MINUTE) return `${Math.round(ms / 1000)} ${u.second}`
+  if (ms < HOUR) return `${Math.floor(ms / MINUTE)} ${u.minute}`
   const hours = Math.floor(ms / HOUR)
   const minutes = Math.floor((ms % HOUR) / MINUTE)
-  return `${hours} ч ${String(minutes).padStart(2, '0')} мин`
+  return `${hours} ${u.hour} ${String(minutes).padStart(2, '0')} ${u.minute}`
 }
 
 const fit = (text: string, width: number): string =>
   text.length > width ? `${text.slice(0, Math.max(0, width - 1))}…` : text.padEnd(width)
 
-const COLUMNS = { state: 9, started: 12, active: 12, talked: 14 } as const
-const FIXED = COLUMNS.state + COLUMNS.started + COLUMNS.active + COLUMNS.talked
+type Columns = { state: number; started: number; active: number; talked: number }
+
+/** Column widths for a language: the status column fits its longest label. */
+const columnsFor = (s: Strings): Columns => ({
+  state: Math.max(s.columns.state.length, ...Object.values(s.states).map(l => l.length)) + 2,
+  started: s.startedLabel('2026-12-31 23:59').length + 1,
+  active: 12,
+  talked: 14,
+})
+
+const fixedWidth = (c: Columns) => c.state + c.started + c.active + c.talked
 
 // the full-width transcript table has room for a wider gap after the start date
 const WIDE_STARTED_EXTRA = 4
 
 const row = (
+  c: Columns,
   name: string,
   state: string,
   started: string,
@@ -69,10 +79,10 @@ const row = (
   startedExtra = 0,
 ) =>
   fit(name, nameWidth) +
-  fit(state, COLUMNS.state) +
-  fit(started, COLUMNS.started + startedExtra) +
-  fit(active, COLUMNS.active) +
-  talked.padStart(COLUMNS.talked - 1)
+  fit(state, c.state) +
+  fit(started, c.started + startedExtra) +
+  fit(active, c.active) +
+  talked.padStart(c.talked - 1)
 
 const lastTouch = (s: SessionInfo) => s.lastHumanAtMs ?? s.createdAtMs
 
@@ -89,7 +99,7 @@ const baseName = (path: string) => path.replace(/\/+$/, '').split('/').pop() || 
  * sessions inside them go from the most recently talked to the least.
  * Two folders with the same name are told apart by their parent folder.
  */
-export const groupByProject = (sessions: readonly SessionInfo[]): ProjectGroup[] => {
+export const groupByProject = (sessions: readonly SessionInfo[], noFolder = 'no folder'): ProjectGroup[] => {
   const groups = new Map<string, SessionInfo[]>()
   for (const s of [...sessions].sort(byLastTalk)) {
     const list = groups.get(s.project)
@@ -101,18 +111,9 @@ export const groupByProject = (sessions: readonly SessionInfo[]): ProjectGroup[]
     const name = baseName(project)
     const isShared = names.filter(n => n === name).length > 1
     const parts = project.split('/').filter(Boolean)
-    const label = isShared && parts.length > 1 ? parts.slice(-2).join('/') : name || 'без папки'
+    const label = isShared && parts.length > 1 ? parts.slice(-2).join('/') : name || noFolder
     return { project, label, sessions: list }
   })
-}
-
-const sessionWord = (n: number) => {
-  const tens = n % 100
-  const ones = n % 10
-  if (tens >= 11 && tens <= 14) return 'сессий'
-  if (ones === 1) return 'сессия'
-  if (ones >= 2 && ones <= 4) return 'сессии'
-  return 'сессий'
 }
 
 let isRefreshing = false
@@ -149,21 +150,20 @@ async function drawTable($: EngineInterface, e: RenderInput, width: number, foot
   const snap = await read($, snapshot)
 
   if (snap === null) {
-    return <Text dimColor>Собираю данные…</Text>
+    return <Text dimColor>{t.collecting}</Text>
   }
 
-  const nameWidth = Math.max(12, width - FIXED - startedExtra - INDENT.length)
-  const groups = groupByProject(snap.sessions)
-  const total = snap.sessions.length
+  const cols = columnsFor(t)
+  const nameWidth = Math.max(12, width - fixedWidth(cols) - startedExtra - INDENT.length)
+  const groups = groupByProject(snap.sessions, t.noFolder)
+  const head = t.columns
 
   return (
     <Box flexDirection="column">
-      <Text dimColor>
-        {total} {sessionWord(total)} в {groups.length} проектах · обновлено {snap.takenLabel}
-      </Text>
-      {snap.error !== null && <Text color="red">Ошибка сбора: {snap.error}</Text>}
+      <Text dimColor>{t.summary(snap.sessions.length, groups.length, snap.takenLabel)}</Text>
+      {snap.error !== null && <Text color="red">{t.collectError(snap.error)}</Text>}
       <Text bold wrap="truncate">
-        {INDENT + row('Сессия', 'Статус', 'Запущена', 'Активно', 'Общались', nameWidth, startedExtra)}
+        {INDENT + row(cols, head.name, head.state, head.started, head.active, head.talked, nameWidth, startedExtra)}
       </Text>
       {groups.map(g => (
         <Box flexDirection="column">
@@ -172,18 +172,19 @@ async function drawTable($: EngineInterface, e: RenderInput, width: number, foot
             <Text bold>{g.label}</Text>
             <Text dimColor>
               {'  '}
-              {g.sessions.length} {sessionWord(g.sessions.length)}
+              {t.sessionCount(g.sessions.length)}
             </Text>
           </Text>
           {g.sessions.map(s => (
             <Text wrap="truncate" dimColor={s.state === 'done' || s.state === 'stopped'}>
               {INDENT +
                 row(
+                  cols,
                   s.name,
-                  STATE_LABELS[s.state] ?? s.state,
-                  s.createdLabel,
-                  formatDuration(s.workMs),
-                  s.lastHumanAtMs === null ? '—' : `${formatAgo(snap.takenAtMs - s.lastHumanAtMs)} назад`,
+                  t.states[s.state] ?? s.state,
+                  t.startedLabel(s.createdLocal),
+                  formatDuration(s.workMs, t.units),
+                  s.lastHumanAtMs === null ? t.never : t.ago(formatAgo(snap.takenAtMs - s.lastHumanAtMs, t.units)),
                   nameWidth,
                   startedExtra,
                 )}
@@ -193,7 +194,7 @@ async function drawTable($: EngineInterface, e: RenderInput, width: number, foot
       ))}
       <Text> </Text>
       <Text dimColor wrap="wrap">
-        Активно: время, когда в сессии шла работа или переписка, без пауз длиннее 5 минут. Общались: когда вы последний раз писали в сессию. {footer}
+        {t.legend} {footer}
       </Text>
     </Box>
   )
@@ -224,22 +225,24 @@ async function keepRefreshing($: EngineInterface): Promise<void> {
 async function openPane($: EngineInterface): Promise<{ text: string }> {
   // focus: the pane takes the keyboard at once; again on an open pane focuses it
   // closeOnEscape: Esc closes the pane instead of only handing the keys back
-  await $.ui.open({ id: PANE, title: TITLE, focus: true, closeOnEscape: true, columns: PANE_COLUMNS })
+  await $.ui.open({ id: PANE, title: t.paneTitle, focus: true, closeOnEscape: true, columns: PANE_COLUMNS })
   isPaneOpen = true
   await keepRefreshing($)
-  return { text: 'Панель «Сессии» открыта сбоку и в фокусе: стрелки листают, r обновляет, Esc или x закрывает.' }
+  return { text: t.paneOpened }
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  t = STRINGS[langOf(options)]
+
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: COMMAND,
-      description: 'Таблица сессий по проектам на всю ширину: запуск, активная работа, последнее общение',
+      description: t.tableCommandDescription,
       argumentHint: '[pane|panel]',
     })
     await $.command.register({
       name: PANE_COMMAND,
-      description: 'То же в боковой панели (как /session-times pane или panel)',
+      description: t.paneCommandDescription,
     })
     return next(e)
   })
@@ -251,7 +254,7 @@ export const register: Register = on => {
     // a fresh id each time, so the table lands at the end of the transcript
     await $.ui.place({ id: `table-${await $.clock.now()}` })
     await keepRefreshing($)
-    return { text: 'Таблица сессий ниже, обновляется каждые 30 секунд в течение 15 минут.' }
+    return { text: t.tableOpened }
   })
 
   on('ui.close', async ($, e, next) => {
@@ -262,7 +265,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'Placed' }, async ($, e, next) => {
     if (e.props.plugin !== 'session-times' || !e.props.id.startsWith('table-')) return next(e)
     const width = e.viewport?.columns ?? 120
-    return drawTable($, e, width, '/session-times — новая таблица; /session-times-pane, /session-times pane или panel — боковой панелью.', WIDE_STARTED_EXTRA)
+    return drawTable($, e, width, t.tableFooter, WIDE_STARTED_EXTRA)
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -270,11 +273,11 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Box>
-          <Button key="refresh" label="Обновить" hotkey="r" onPress={() => refresh($)} />
+          <Button key="refresh" label={t.refresh} hotkey="r" onPress={() => refresh($)} />
           <Text> </Text>
-          <Button key="close" label="Закрыть" hotkey="x" role="dismiss" onPress={() => $.ui.close({ id: PANE })} />
+          <Button key="close" label={t.close} hotkey="x" role="dismiss" onPress={() => $.ui.close({ id: PANE })} />
         </Box>
-        {await drawTable($, e, e.props.bodyColumns, 'Esc или x — закрыть панель, r — обновить, Tab — перейти между кнопками.')}
+        {await drawTable($, e, e.props.bodyColumns, t.paneFooter)}
       </Box>
     )
   })

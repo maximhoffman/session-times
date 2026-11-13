@@ -1,6 +1,9 @@
 import { expect, test } from 'claude-code/testing'
 
 import { formatAgo, formatDuration, groupByProject } from './register'
+import { STRINGS } from './strings'
+
+const RU = { options: { language: 'ru' } } as const
 
 const NOW = Date.UTC(2026, 10, 13, 12, 0, 0)
 const MIN = 60_000
@@ -14,7 +17,7 @@ const COLLECTED = {
       state: 'done',
       project: '/p/alpha',
       createdAtMs: NOW - 10 * 24 * 60 * MIN,
-      createdLabel: '03.11 10:00',
+      createdLocal: '2026-11-03 10:00',
       workMs: 125 * MIN,
       lastHumanAtMs: NOW - 3 * 24 * 60 * MIN,
     },
@@ -24,7 +27,7 @@ const COLLECTED = {
       state: 'working',
       project: '/p/alpha',
       createdAtMs: NOW - 60 * MIN,
-      createdLabel: '13.11 14:00',
+      createdLocal: '2026-11-13 14:00',
       workMs: 40 * MIN,
       lastHumanAtMs: NOW - 20 * MIN,
     },
@@ -34,7 +37,7 @@ const COLLECTED = {
       state: 'blocked',
       project: '/p/beta',
       createdAtMs: NOW - 30 * MIN,
-      createdLabel: '13.11 14:30',
+      createdLocal: '2026-11-13 14:30',
       workMs: 12 * MIN,
       lastHumanAtMs: NOW - 5 * MIN,
     },
@@ -56,15 +59,21 @@ const PANE = {
 } as const
 
 test('formatting picks one readable unit', () => {
-  expect(formatAgo(40_000)).toBe('40 с')
-  expect(formatAgo(12 * MIN)).toBe('12 мин')
-  expect(formatAgo(5 * 60 * MIN)).toBe('5 ч')
-  expect(formatAgo(3 * 24 * 60 * MIN)).toBe('3 дн')
-  expect(formatDuration(45_000)).toBe('45 с')
-  expect(formatDuration(125 * MIN)).toBe('2 ч 05 мин')
+  const ru = STRINGS.ru.units
+  expect(formatAgo(40_000, ru)).toBe('40 с')
+  expect(formatAgo(12 * MIN, ru)).toBe('12 мин')
+  expect(formatAgo(5 * 60 * MIN, ru)).toBe('5 ч')
+  expect(formatAgo(3 * 24 * 60 * MIN, ru)).toBe('3 дн')
+  expect(formatDuration(45_000, ru)).toBe('45 с')
+  expect(formatDuration(125 * MIN, ru)).toBe('2 ч 05 мин')
+  const en = STRINGS.en.units
+  expect(formatAgo(3 * 24 * 60 * MIN, en)).toBe('3 d')
+  expect(formatDuration(125 * MIN, en)).toBe('2 h 05 min')
+  expect(STRINGS.en.startedLabel('2026-11-13 14:30')).toBe('Nov 13 14:30')
+  expect(STRINGS.ru.startedLabel('2026-11-13 14:30')).toBe('13.11 14:30')
 })
 
-test('the command opens a pane listing sessions, most recently talked first', async ($, on) => {
+test('the command opens a pane listing sessions, most recently talked first', RU, async ($, on) => {
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -99,7 +108,7 @@ test('the command opens a pane listing sessions, most recently talked first', as
   }
 })
 
-test('a failed collection shows the error instead of crashing', async ($, on) => {
+test('a failed collection shows the error instead of crashing', RU, async ($, on) => {
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -119,7 +128,7 @@ test('a failed collection shows the error instead of crashing', async ($, on) =>
 })
 
 test('folders that share a name are told apart by their parent', () => {
-  const base = { state: 'done', createdAtMs: 0, createdLabel: '', workMs: 0, lastHumanAtMs: null }
+  const base = { state: 'done', createdAtMs: 0, createdLocal: '', workMs: 0, lastHumanAtMs: null }
   const groups = groupByProject([
     { ...base, id: 'a', name: 'a', project: '/x/app' },
     { ...base, id: 'b', name: 'b', project: '/y/app' },
@@ -128,7 +137,7 @@ test('folders that share a name are told apart by their parent', () => {
   expect(groups.map(g => g.label).sort()).toEqual(['tool', 'x/app', 'y/app'])
 })
 
-test('the plain command puts a full-width table into the transcript', async ($, on) => {
+test('the plain command puts a full-width table into the transcript', RU, async ($, on) => {
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.place', () => ({ value: {} }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -191,7 +200,7 @@ test('the close button closes the pane from the keyboard', async ($, on) => {
   await ui.unmount()
 })
 
-test('"panel" opens the side pane just like "pane"', async ($, on) => {
+test('"panel" opens the side pane just like "pane"', RU, async ($, on) => {
   const opened: string[] = []
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.open', (_, e) => {
@@ -246,5 +255,42 @@ test('/session-times-pane is its own command and opens the side pane', async ($,
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /fresh waiting session/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('English is the default: table, states and command texts', async ($, on) => {
+  const registered: { name: string; description: string }[] = []
+  on('command.register', (_, e) => {
+    registered.push(e)
+    return { value: { command: e.name } }
+  })
+  on('ui.place', () => ({ value: {} }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: NOW }))
+  on('clock.every', () => ({ value: {} }))
+  on('process.run', () => ({
+    value: { exitCode: 0, stdout: JSON.stringify(COLLECTED), stderr: '' },
+  }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(registered[0]?.description).toMatch(/^Full-width table/)
+  const answer = await $.command.run({ command: 'session-times', args: '' })
+  expect(JSON.stringify(answer)).toContain('Session table below')
+
+  const ui = await $.ui.mount({
+    plugin: 'session-times',
+    surface: 'terminal',
+    component: 'Placed',
+    props: { id: `table-${NOW}`, plugin: 'session-times' },
+    viewport: { columns: 140, rows: 50 },
+  })
+  const summary = await ui.find({ type: 'Text', text: /sessions in/ })
+  expect(summary?.text).toBe('3 sessions in 2 projects · updated 15:00:00')
+  expect(await ui.find({ type: 'Text', text: /Session\s+Status\s+Started\s+Active\s+Last talk/ })).toBeDefined()
+  const fresh = await ui.find({ type: 'Text', text: /fresh waiting session/ })
+  expect(fresh?.text).toMatch(/needs you\s+Nov 13 14:30\s+12 min\s+5 min ago/)
+  const old = await ui.find({ type: 'Text', text: /old finished session/ })
+  expect(old?.text).toMatch(/done\s+Nov 3 10:00\s+2 h 05 min\s+3 d ago/)
+  expect(await ui.find({ type: 'Text', text: /^\s*2 sessions$/ })).toBeDefined()
   await ui.unmount()
 })

@@ -1,1 +1,22 @@
-{ "name": "session-times", "version": "0.1.0", "description": "Pane with start time, active work time and last human message for every background session", "types": "./types/index.d.ts" }
+{
+  "name": "session-times",
+  "version": "0.2.0",
+  "description": "Background Claude Code sessions by project: start time, active work time and time since the last human message",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Max Hoffman"
+  },
+  "license": "MIT",
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Interface language",
+      "description": "Language of the table, the pane and the command texts",
+      "default": "en",
+      "options": [
+        "en",
+        "ru"
+      ]
+    }
+  }
+}
