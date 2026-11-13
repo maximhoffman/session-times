@@ -65,10 +65,11 @@ test('formatting picks one readable unit', () => {
 })
 
 test('the command opens a pane listing sessions, most recently talked first', async ($, on) => {
-  on('command.register', () => ({ value: { command: 'session-times' } }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('clock.now', () => ({ value: NOW }))
+  on('clock.every', () => ({ value: {} }))
   on('process.run', () => ({
     value: { exitCode: 0, stdout: JSON.stringify(COLLECTED), stderr: '' },
   }))
@@ -99,10 +100,11 @@ test('the command opens a pane listing sessions, most recently talked first', as
 })
 
 test('a failed collection shows the error instead of crashing', async ($, on) => {
-  on('command.register', () => ({ value: { command: 'session-times' } }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('clock.now', () => ({ value: NOW }))
+  on('clock.every', () => ({ value: {} }))
   on('process.run', () => ({
     value: { exitCode: 1, stdout: '', stderr: 'Traceback\nboom: broken' },
   }))
@@ -127,7 +129,7 @@ test('folders that share a name are told apart by their parent', () => {
 })
 
 test('the plain command puts a full-width table into the transcript', async ($, on) => {
-  on('command.register', () => ({ value: { command: 'session-times' } }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.place', () => ({ value: {} }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('clock.now', () => ({ value: NOW }))
@@ -160,7 +162,7 @@ test('the plain command puts a full-width table into the transcript', async ($, 
 test('the close button closes the pane from the keyboard', async ($, on) => {
   const closed: string[] = []
   const opened: unknown[] = []
-  on('command.register', () => ({ value: { command: 'session-times' } }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.open', (_, e) => {
     opened.push(e)
     return { value: { isPlaced: true } }
@@ -191,7 +193,7 @@ test('the close button closes the pane from the keyboard', async ($, on) => {
 
 test('"panel" opens the side pane just like "pane"', async ($, on) => {
   const opened: string[] = []
-  on('command.register', () => ({ value: { command: 'session-times' } }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.open', (_, e) => {
     opened.push(e.id)
     return { value: { isPlaced: true } }
@@ -212,6 +214,36 @@ test('"panel" opens the side pane just like "pane"', async ($, on) => {
   expect(JSON.stringify(answer)).toContain('Панель «Сессии» открыта сбоку')
 
   // wait for the collected data to reach the pane before the test ends
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /fresh waiting session/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('/session-times-pane is its own command and opens the side pane', async ($, on) => {
+  const registered: { name: string; argumentHint?: string }[] = []
+  const opened: string[] = []
+  on('command.register', (_, e) => {
+    registered.push(e)
+    return { value: { command: e.name } }
+  })
+  on('ui.open', (_, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } }
+  })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('clock.now', () => ({ value: NOW }))
+  on('clock.every', () => ({ value: {} }))
+  on('process.run', () => ({
+    value: { exitCode: 0, stdout: JSON.stringify(COLLECTED), stderr: '' },
+  }))
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(registered.map(c => c.name)).toEqual(['session-times', 'session-times-pane'])
+  expect(registered[0]?.argumentHint).toBe('[pane|panel]')
+
+  await $.command.run({ command: 'session-times-pane', args: '' })
+  expect(opened).toEqual(['session-times'])
+
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /fresh waiting session/ })).toBeDefined()
   await ui.unmount()

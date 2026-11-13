@@ -19,7 +19,7 @@ Sessions are grouped by the folder they were started in. Worktrees are folded in
 ## Usage
 
 - `/session-times` prints the table into the transcript at full terminal width. The table refreshes every 30 seconds for 15 minutes, then stops. Run the command again for a fresh table at the bottom of the transcript.
-- `/session-times pane` or `/session-times panel` (the two are the same) opens the same table as a side pane. Claude Code caps a side pane at 45% of the terminal width. The pane opens focused and keeps refreshing while it is open.
+- `/session-times-pane` opens the same table as a side pane. So do `/session-times pane` and `/session-times panel`. The separate command exists because Claude Code's command typeahead lists commands, not their arguments; `/session-times` only shows a dim `[pane|panel]` hint. Claude Code caps a side pane at 45% of the terminal width. The pane opens focused and keeps refreshing while it is open.
   - `r` refreshes
   - `Esc` or `x` closes the pane
   - `Tab` moves between the buttons and `Enter` presses one

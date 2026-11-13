@@ -6,6 +6,8 @@ import type { SessionInfo, Snapshot } from '../types'
 const PANE = 'session-times'
 const TITLE = 'Сессии'
 const COMMAND = 'session-times'
+// a command of its own, so the side pane shows up in the typeahead list
+const PANE_COMMAND = 'session-times-pane'
 const REFRESH_MS = 30_000
 // the transcript table keeps refreshing this long after the last command
 const AUTO_STOP_MS = 15 * 60_000
@@ -219,24 +221,33 @@ async function keepRefreshing($: EngineInterface): Promise<void> {
   })
 }
 
+async function openPane($: EngineInterface): Promise<{ text: string }> {
+  // focus: the pane takes the keyboard at once; again on an open pane focuses it
+  // closeOnEscape: Esc closes the pane instead of only handing the keys back
+  await $.ui.open({ id: PANE, title: TITLE, focus: true, closeOnEscape: true, columns: PANE_COLUMNS })
+  isPaneOpen = true
+  await keepRefreshing($)
+  return { text: 'Панель «Сессии» открыта сбоку и в фокусе: стрелки листают, r обновляет, Esc или x закрывает.' }
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: COMMAND,
-      description: 'Таблица сессий по проектам на всю ширину: запуск, активная работа, последнее общение (pane или panel — боковой панелью)',
+      description: 'Таблица сессий по проектам на всю ширину: запуск, активная работа, последнее общение',
+      argumentHint: '[pane|panel]',
+    })
+    await $.command.register({
+      name: PANE_COMMAND,
+      description: 'То же в боковой панели (как /session-times pane или panel)',
     })
     return next(e)
   })
 
+  on('command.run', { command: PANE_COMMAND }, async $ => openPane($))
+
   on('command.run', { command: COMMAND }, async ($, e) => {
-    if (PANE_ARGS.has(e.args.trim().toLowerCase())) {
-      // focus: the pane takes the keyboard at once; again on an open pane focuses it
-      // closeOnEscape: Esc closes the pane instead of only handing the keys back
-      await $.ui.open({ id: PANE, title: TITLE, focus: true, closeOnEscape: true, columns: PANE_COLUMNS })
-      isPaneOpen = true
-      await keepRefreshing($)
-      return { text: 'Панель «Сессии» открыта сбоку и в фокусе: стрелки листают, r обновляет, Esc или x закрывает.' }
-    }
+    if (PANE_ARGS.has(e.args.trim().toLowerCase())) return openPane($)
     // a fresh id each time, so the table lands at the end of the transcript
     await $.ui.place({ id: `table-${await $.clock.now()}` })
     await keepRefreshing($)
@@ -251,7 +262,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'Placed' }, async ($, e, next) => {
     if (e.props.plugin !== 'session-times' || !e.props.id.startsWith('table-')) return next(e)
     const width = e.viewport?.columns ?? 120
-    return drawTable($, e, width, '/session-times — новая таблица, /session-times pane или /session-times panel — боковой панелью.', WIDE_STARTED_EXTRA)
+    return drawTable($, e, width, '/session-times — новая таблица; /session-times-pane, /session-times pane или panel — боковой панелью.', WIDE_STARTED_EXTRA)
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
